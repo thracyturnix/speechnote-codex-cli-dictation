@@ -10,7 +10,7 @@ The app (speech note) will take what you say and put it in the command box of th
 
 Full breakdown:
 
-Speech Note starts listening.
+The wrapper starts Speech Note and shows desktop notifications for visual confirmation.
 
 When Speech Note finishes dictation and updates the clipboard, the script switches back to the terminal window you were using and pastes the text with `Ctrl+Shift+V`.
 
@@ -24,6 +24,8 @@ Install or check that these commands exist:
     command -v copyq
     command -v flatpak
     command -v autokey-gtk
+    command -v notify-send
+    command -v flock
 
 Speech Note should be installed as a Flatpak.
 
@@ -60,6 +62,20 @@ Put this inside it:
     set -u
 
     log_file=/tmp/speechnote-to-focused-window.log
+    lock_file=/tmp/speechnote-to-focused-window.lock
+    notify() {
+      if command -v notify-send >/dev/null 2>&1; then
+        notify-send --app-name="Speech Note" --icon=net.mkiol.SpeechNote --expire-time=1800 "$@" >>"$log_file" 2>&1 || true
+      fi
+    }
+
+    exec 9>"$lock_file"
+    if ! flock -n 9; then
+      echo "Speech Note wrapper already running; ignoring duplicate trigger" >>"$log_file"
+      notify "Speech Note" "Dictation already running."
+      exit 0
+    fi
+
     {
       echo
       echo "=== $(date -Is) starting Speech Note wrapper ==="
@@ -71,8 +87,19 @@ Put this inside it:
     before_clipboard="$(copyq clipboard 2>>"$log_file" || true)"
     echo "target_window=${target_window:-none}" >>"$log_file"
 
+    notify "Speech Note" "Hotkey recognised. Starting dictation..."
+    pkill -f 'dsnote --action start-listening-clipboard' >>"$log_file" 2>&1 || true
+    pkill -f 'dsnote --action start-listening-active-window' >>"$log_file" 2>&1 || true
+
     flatpak run net.mkiol.SpeechNote --action start-listening-clipboard >>"$log_file" 2>&1 &
-    echo "started Speech Note clipboard action pid=$!" >>"$log_file"
+    speech_note_pid=$!
+    echo "started Speech Note clipboard action pid=$speech_note_pid" >>"$log_file"
+    notify "Speech Note" "Listening and processing speech..."
+
+    cleanup() {
+      pkill -f 'dsnote --action start-listening-clipboard' >>"$log_file" 2>&1 || true
+    }
+    trap cleanup EXIT
 
     for _ in $(seq 1 900); do
       sleep 0.1
@@ -84,11 +111,13 @@ Put this inside it:
         fi
         echo "clipboard changed; pasting into target window" >>"$log_file"
         xdotool key --clearmodifiers ctrl+shift+v >>"$log_file" 2>&1
+        notify "Speech Note" "Dictation pasted."
         exit 0
       fi
     done
 
     echo "Timed out waiting for Speech Note to update clipboard" >>"$log_file"
+    notify "Speech Note" "Dictation timed out."
     exit 1
 
 Make it executable:
@@ -175,7 +204,7 @@ IMPORTANT: Focus (click / select) the terminal text-entry box running your AI co
 
 Press `Ctrl+Alt+Space`.
 
-Speak. (Speech note should provide popups with 'listening', 'processing' etc indicating its working.
+Speak. The wrapper should show desktop notifications for hotkey recognition and speech processing.
 
 When dictation finishes, the text should automatically paste into the terminal.
 
@@ -184,6 +213,8 @@ When dictation finishes, the text should automatically paste into the terminal.
 Use `Ctrl+Shift+V` for terminal paste.
 
 Do not use `Ctrl+V` in Tilix or many other terminals. It may not paste text correctly.
+
+Do not copy other text while Speech Note is listening. The wrapper treats a clipboard change as the signal that dictation finished.
 
 ## More debugging:
 
