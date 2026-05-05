@@ -1,285 +1,221 @@
-# Global Speech Note Dictation Into Codex CLI on Linux
+# Global Speech Dictation Into Codex CLI on Linux
 
-This is a working setup for using [Speech Note](https://flathub.org/apps/net.mkiol.SpeechNote) as a global dictation hotkey that transcribes speech and pastes the result into the currently focused Codex CLI terminal.
+This setup lets you press a global hotkey, speak into Speech Note, and have the dictated text pasted back into the terminal running Codex, Claude, Gemini, Kimi, or another CLI AI tool.
 
-The setup below was tested on Linux Mint/Cinnamon with an X11 session, Tilix, Speech Note Flatpak, AutoKey, CopyQ, and `xdotool`.
+Tested on Linux Mint / Cinnamon using X11, Tilix, Speech Note Flatpak, AutoKey, CopyQ, and xdotool.
 
-## What This Does
+## What it does
 
-Press:
+Press `Ctrl+Alt+Space`.
 
-```text
-Ctrl+Alt+Space
-```
+Speech Note starts listening.
 
-Then speak into Speech Note. When Speech Note finishes and updates the clipboard, the wrapper reactivates the original terminal window and pastes the transcription with:
+When Speech Note finishes dictation and updates the clipboard, the script switches back to the terminal window you were using and pastes the text with `Ctrl+Shift+V`.
 
-```text
-Ctrl+Shift+V
-```
-
-That last detail matters. In Tilix and many terminals, `Ctrl+V` is not the normal text paste shortcut. It may trigger image paste handling or do something else. `Ctrl+Shift+V` is the terminal paste shortcut.
+This matters because many terminals use `Ctrl+Shift+V` for paste. Plain `Ctrl+V` may not work.
 
 ## Requirements
 
-Install or verify:
+Install or check that these commands exist:
 
-```bash
-command -v xdotool
-command -v copyq
-command -v flatpak
-command -v autokey-gtk
-```
+    command -v xdotool
+    command -v copyq
+    command -v flatpak
+    command -v autokey-gtk
 
-Speech Note Flatpak app ID:
+Speech Note should be installed as a Flatpak.
 
-```text
-net.mkiol.SpeechNote
-```
+The Speech Note Flatpak app ID is:
 
-Useful Speech Note model check:
+    net.mkiol.SpeechNote
 
-```bash
-flatpak run net.mkiol.SpeechNote --print-active-model stt
-```
+You can check the active Speech Note speech-to-text model with:
 
-In my working setup, the active model was:
+    flatpak run net.mkiol.SpeechNote --print-active-model stt
 
-```text
-en_fasterwhisper_small "English (FasterWhisper Small) / en"
-```
+## Why use AutoKey?
 
-## Why AutoKey Instead Of Cinnamon Custom Shortcuts
+Cinnamon custom shortcuts can be unreliable or difficult to debug for this job.
 
-Cinnamon custom shortcuts can work, but debugging them from a sandboxed CLI session is painful because `gsettings` may appear to set values while the real desktop session does not actually grab or execute the shortcut.
+The working flow is:
 
-AutoKey gave a more reliable global hotkey path:
+    Ctrl+Alt+Space
+    -> AutoKey
+    -> shell script
+    -> Speech Note
+    -> clipboard
+    -> terminal paste
 
-```text
-Ctrl+Alt+Space -> AutoKey -> shell wrapper -> Speech Note -> clipboard -> terminal paste
-```
+## Create the shell script
 
-## Shell Wrapper
+Create this file:
 
-Create:
+    ~/.local/bin/speechnote_to_focused_window.sh
 
-```text
-~/.local/bin/speechnote_to_focused_window.sh
-```
+Put this inside it:
 
-Script:
+    #!/usr/bin/env bash
+    set -u
 
-```bash
-#!/usr/bin/env bash
-set -u
+    log_file=/tmp/speechnote-to-focused-window.log
+    {
+      echo
+      echo "=== $(date -Is) starting Speech Note wrapper ==="
+      echo "DISPLAY=${DISPLAY:-}"
+      echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
+    } >>"$log_file"
 
-log_file=/tmp/speechnote-to-focused-window.log
-{
-  echo
-  echo "=== $(date -Is) starting Speech Note wrapper ==="
-  echo "DISPLAY=${DISPLAY:-}"
-  echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
-} >>"$log_file"
+    target_window="$(xdotool getwindowfocus 2>>"$log_file" || true)"
+    before_clipboard="$(copyq clipboard 2>>"$log_file" || true)"
+    echo "target_window=${target_window:-none}" >>"$log_file"
 
-target_window="$(xdotool getwindowfocus 2>>"$log_file" || true)"
-before_clipboard="$(copyq clipboard 2>>"$log_file" || true)"
-echo "target_window=${target_window:-none}" >>"$log_file"
+    flatpak run net.mkiol.SpeechNote --action start-listening-clipboard >>"$log_file" 2>&1 &
+    echo "started Speech Note clipboard action pid=$!" >>"$log_file"
 
-flatpak run net.mkiol.SpeechNote --action start-listening-clipboard >>"$log_file" 2>&1 &
-echo "started Speech Note clipboard action pid=$!" >>"$log_file"
+    for _ in $(seq 1 900); do
+      sleep 0.1
+      current_clipboard="$(copyq clipboard 2>>"$log_file" || true)"
 
-for _ in $(seq 1 900); do
-  sleep 0.1
-  current_clipboard="$(copyq clipboard 2>>"$log_file" || true)"
+      if [ -n "$current_clipboard" ] && [ "$current_clipboard" != "$before_clipboard" ]; then
+        if [ -n "$target_window" ]; then
+          xdotool windowactivate --sync "$target_window" >>"$log_file" 2>&1 || true
+        fi
+        echo "clipboard changed; pasting into target window" >>"$log_file"
+        xdotool key --clearmodifiers ctrl+shift+v >>"$log_file" 2>&1
+        exit 0
+      fi
+    done
 
-  if [ -n "$current_clipboard" ] && [ "$current_clipboard" != "$before_clipboard" ]; then
-    if [ -n "$target_window" ]; then
-      xdotool windowactivate --sync "$target_window" >>"$log_file" 2>&1 || true
-    fi
-    echo "clipboard changed; pasting into target window" >>"$log_file"
-    xdotool key --clearmodifiers ctrl+shift+v >>"$log_file" 2>&1
-    exit 0
-  fi
-done
-
-echo "Timed out waiting for Speech Note to update clipboard" >>"$log_file"
-exit 1
-```
+    echo "Timed out waiting for Speech Note to update clipboard" >>"$log_file"
+    exit 1
 
 Make it executable:
 
-```bash
-chmod +x ~/.local/bin/speechnote_to_focused_window.sh
-```
+    chmod +x ~/.local/bin/speechnote_to_focused_window.sh
 
-## AutoKey Script
+## Create the AutoKey script
 
-Create this folder:
+Create the folder:
 
-```bash
-mkdir -p ~/.config/autokey/data/Codex
-```
+    mkdir -p ~/.config/autokey/data/Codex
 
-Create:
+Create this file:
 
-```text
-~/.config/autokey/data/Codex/Speech Note Dictation.py
-```
+    ~/.config/autokey/data/Codex/Speech Note Dictation.py
 
-Content:
+Put this inside it:
 
-```python
-system.exec_command("/bin/bash -lc 'printf \"%s\\n\" \"$(date -Is) AutoKey Ctrl+Alt+Space fired\" >> /tmp/autokey-speechnote-dictation.log; nohup /bin/bash \"$HOME/.local/bin/speechnote_to_focused_window.sh\" >> /tmp/autokey-speechnote-dictation.log 2>&1 &'")
-```
+    system.exec_command("/bin/bash -lc 'printf \"%s\\n\" \"$(date -Is) AutoKey Ctrl+Alt+Space fired\" >> /tmp/autokey-speechnote-dictation.log; nohup /bin/bash \"$HOME/.local/bin/speechnote_to_focused_window.sh\" >> /tmp/autokey-speechnote-dictation.log 2>&1 &'")
 
-Create:
+Now create this file:
 
-```text
-~/.config/autokey/data/Codex/Speech Note Dictation.json
-```
+    ~/.config/autokey/data/Codex/Speech Note Dictation.json
 
-Content:
+Put this inside it:
 
-```json
-{
-    "type": "script",
-    "description": "Speech Note Dictation",
-    "store": {},
-    "modes": [],
-    "usageCount": 0,
-    "prompt": false,
-    "omitTrigger": false,
-    "showInTrayMenu": false,
-    "abbreviation": {
-        "abbreviations": [],
-        "backspace": true,
-        "ignoreCase": false,
-        "immediate": false,
-        "triggerInside": false,
-        "wordChars": "[\\w]"
-    },
-    "hotkey": {
-        "modifiers": [
-            "<ctrl>",
-            "<alt>"
-        ],
-        "hotKey": " "
-    },
-    "filter": {
-        "regex": null,
-        "isRecursive": false
+    {
+        "type": "script",
+        "description": "Speech Note Dictation",
+        "store": {},
+        "modes": [],
+        "usageCount": 0,
+        "prompt": false,
+        "omitTrigger": false,
+        "showInTrayMenu": false,
+        "abbreviation": {
+            "abbreviations": [],
+            "backspace": true,
+            "ignoreCase": false,
+            "immediate": false,
+            "triggerInside": false,
+            "wordChars": "[\\w]"
+        },
+        "hotkey": {
+            "modifiers": [
+                "<ctrl>",
+                "<alt>"
+            ],
+            "hotKey": " "
+        },
+        "filter": {
+            "regex": null,
+            "isRecursive": false
+        }
     }
-}
-```
 
-Important: AutoKey wants the space key represented as a literal space:
+Important: the space key must be written as a literal space:
 
-```json
-"hotKey": " "
-```
+    "hotKey": " "
 
-Do not use:
+Do not write:
 
-```json
-"hotKey": "space"
-```
+    "hotKey": "space"
 
-That can fail with an AutoKey error like:
+That can cause AutoKey to fail with:
 
-```text
-Unknown key name: space
-```
+    Unknown key name: space
 
 ## Start AutoKey
 
-AutoKey may already be configured to autostart. To start it manually in the current desktop session:
+AutoKey may already start automatically.
 
-```bash
-DISPLAY=:0 \
-XAUTHORITY="$HOME/.Xauthority" \
-DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" \
-XDG_RUNTIME_DIR="/run/user/$(id -u)" \
-setsid -f autokey-gtk >/tmp/autokey-gtk.log 2>&1
-```
+To start it manually:
 
-Verify:
+    DISPLAY=:0 \
+    XAUTHORITY="$HOME/.Xauthority" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" \
+    XDG_RUNTIME_DIR="/run/user/$(id -u)" \
+    setsid -f autokey-gtk >/tmp/autokey-gtk.log 2>&1
 
-```bash
-ps -ef | grep -i '[a]utokey'
-```
+Check that AutoKey is running:
 
-## Optional: Clear Cinnamon Custom Shortcut
+    ps -ef | grep -i '[a]utokey'
 
-If you previously tried Cinnamon custom shortcuts for the same combo, clear them so only AutoKey owns the hotkey:
+## Optional: remove old Cinnamon shortcut
 
-```bash
-gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding "[]"
-```
+If you previously used the same shortcut in Cinnamon, clear it so AutoKey owns the hotkey:
 
-Verify:
+    gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding "[]"
 
-```bash
-gsettings get org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding
-```
+Check it was cleared:
 
-Expected:
+    gsettings get org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding
 
-```text
-@as []
-```
+Expected result:
 
-## Test
+    @as []
 
-With Codex CLI focused, press:
+## Test it
 
-```text
-Ctrl+Alt+Space
-```
+Focus the terminal running Codex.
 
-Then dictate in Speech Note and finish the dictation.
+Press `Ctrl+Alt+Space`.
 
-Check AutoKey fired:
+Speak into Speech Note.
 
-```bash
-tail -40 /tmp/autokey-speechnote-dictation.log
-```
+When dictation finishes, the text should paste into the terminal.
 
-Check the wrapper:
+Check whether AutoKey fired:
 
-```bash
-tail -80 /tmp/speechnote-to-focused-window.log
-```
+    tail -40 /tmp/autokey-speechnote-dictation.log
 
-Expected wrapper log shape:
+Check the wrapper log:
 
-```text
-=== 2026-05-05T13:23:09+09:30 starting Speech Note wrapper ===
-DISPLAY=:0
-XDG_SESSION_TYPE=x11
-target_window=56623111
-started Speech Note clipboard action pid=...
-clipboard changed; pasting into target window
-```
+    tail -80 /tmp/speechnote-to-focused-window.log
 
-## Known Traps
+A successful log should look roughly like this:
 
-Do not use `Ctrl+Alt+Shift+D` for this. In a terminal, anything involving `Ctrl+D` can be interpreted as EOF/exit behavior.
+    === 2026-05-05T13:23:09+09:30 starting Speech Note wrapper ===
+    DISPLAY=:0
+    XDG_SESSION_TYPE=x11
+    target_window=56623111
+    started Speech Note clipboard action pid=...
+    clipboard changed; pasting into target window
 
-Do not use `Ctrl+Alt+V` or similar paste-looking shortcuts. They collide with paste workflows and are confusing.
+## Common problems
 
-Do not paste into Tilix/Codex CLI with `Ctrl+V`. Use `Ctrl+Shift+V`.
+Use `Ctrl+Shift+V` for terminal paste.
 
-Do not assume a `gsettings set` made from a sandboxed CLI session actually updated the real Cinnamon desktop session. If dconf reports `/run/user/1000/dconf/user` as read-only, you are not testing the real shortcut path.
+Do not use `Ctrl+V` in Tilix or many other terminals. It may not paste text correctly.
 
-Do not use `"hotKey": "space"` in AutoKey JSON. Use `"hotKey": " "`.
-
-## What This Is
-
-This is mostly configuration and glue:
-
-- AutoKey config binds a global hotkey.
-- A tiny AutoKey script launches a shell wrapper.
-- The shell wrapper calls Speech Note, watches the clipboard, returns focus, and sends terminal paste.
-- Speech Note does the actual speech-to-text work.
-
-It is not a full application. It is a working desktop automation recipe.
+This setup is for X11. It may not work the same way on Wayland because xdotool depends on X11 window control.
