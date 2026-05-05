@@ -1,0 +1,1 @@
+system.exec_command("/bin/bash -lc 'printf \"%s\\n\" \"$(date -Is) AutoKey Ctrl+Alt+Space fired\" >> /tmp/autokey-speechnote-dictation.log; nohup /bin/bash \"$HOME/.local/bin/speechnote_to_focused_window.sh\" >> /tmp/autokey-speechnote-dictation.log 2>&1 &'")

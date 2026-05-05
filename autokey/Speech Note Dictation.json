@@ -1,0 +1,29 @@
+{
+    "type": "script",
+    "description": "Speech Note Dictation",
+    "store": {},
+    "modes": [],
+    "usageCount": 0,
+    "prompt": false,
+    "omitTrigger": false,
+    "showInTrayMenu": false,
+    "abbreviation": {
+        "abbreviations": [],
+        "backspace": true,
+        "ignoreCase": false,
+        "immediate": false,
+        "triggerInside": false,
+        "wordChars": "[\\w]"
+    },
+    "hotkey": {
+        "modifiers": [
+            "<ctrl>",
+            "<alt>"
+        ],
+        "hotKey": " "
+    },
+    "filter": {
+        "regex": null,
+        "isRecursive": false
+    }
+}
