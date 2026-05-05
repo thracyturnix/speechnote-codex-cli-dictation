@@ -1,12 +1,14 @@
 # Global Speech Dictation Into Codex CLI on Linux
 
-This setup lets you press a global hotkey, speak into Speech Note, and have the dictated text pasted back into the terminal running Codex, Claude, Gemini, Kimi, or another CLI AI tool.
-
-Tested on Linux Mint / Cinnamon using X11, Tilix, Speech Note Flatpak, AutoKey, CopyQ, and xdotool.
+This is to be able to speak to AI coding tools within a CLI. It works like voice typing on Android. 
 
 ## What it does
 
-Press `Ctrl+Alt+Space`.
+Press a hotkey (ie `Ctrl+Alt+Space`).
+
+The app (speech note) will take what you say and put it in the command box of the AI you are using (ie Gemini, Codex, Claude, Deepseek, Kimi, etc)
+
+Full breakdown:
 
 Speech Note starts listening.
 
@@ -35,9 +37,9 @@ You can check the active Speech Note speech-to-text model with:
 
 ## Why use AutoKey?
 
-Cinnamon custom shortcuts can be unreliable or difficult to debug for this job.
+This was done in Cinnamon. I found Autokey more reliable than its native system. YMMV.
 
-The working flow is:
+Full breakdown:
 
     Ctrl+Alt+Space
     -> AutoKey
@@ -151,10 +153,6 @@ Do not write:
 
     "hotKey": "space"
 
-That can cause AutoKey to fail with:
-
-    Unknown key name: space
-
 ## Start AutoKey
 
 AutoKey may already start automatically.
@@ -171,29 +169,23 @@ Check that AutoKey is running:
 
     ps -ef | grep -i '[a]utokey'
 
-## Optional: remove old Cinnamon shortcut
+## Test 
 
-If you previously used the same shortcut in Cinnamon, clear it so AutoKey owns the hotkey:
-
-    gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding "[]"
-
-Check it was cleared:
-
-    gsettings get org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom2/ binding
-
-Expected result:
-
-    @as []
-
-## Test it
-
-Focus the terminal running Codex.
+IMPORTANT: Focus (click / select) the terminal text-entry box running your AI coding tool.
 
 Press `Ctrl+Alt+Space`.
 
-Speak into Speech Note.
+Speak. (Speech note should provide popups with 'listening', 'processing' etc indicating its working.
 
-When dictation finishes, the text should paste into the terminal.
+When dictation finishes, the text should automatically paste into the terminal.
+
+## Common problems
+
+Use `Ctrl+Shift+V` for terminal paste.
+
+Do not use `Ctrl+V` in Tilix or many other terminals. It may not paste text correctly.
+
+## More debugging:
 
 Check whether AutoKey fired:
 
@@ -212,10 +204,7 @@ A successful log should look roughly like this:
     started Speech Note clipboard action pid=...
     clipboard changed; pasting into target window
 
-## Common problems
 
-Use `Ctrl+Shift+V` for terminal paste.
 
-Do not use `Ctrl+V` in Tilix or many other terminals. It may not paste text correctly.
 
 This setup is for X11. It may not work the same way on Wayland because xdotool depends on X11 window control.
